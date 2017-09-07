@@ -77,7 +77,7 @@ stateless reset token 必须很难被猜到。服务器可以为每一个已创�
 
 11.2.1. Blocking on Flow Control
 -----
-当接收方超过flow control的最大限制并且没有收到MAX_DATA和MAX_STREAM_DATA帧，接收方将会被阻塞并且接收方必须发送BLOKED帧或者STREAM_BLOCKED帧。这些帧将会对接收方的debug有帮助，除此之外，他们不必做任何事。
+当发送方超过flow control的最大限制并且没有收到MAX_DATA和MAX_STREAM_DATA帧，发送方将会被阻塞并且发送方必须发送BLOKED帧或者STREAM_BLOCKED帧。这些帧将会对接收方的debug有帮助，除此之外，他们不必做任何事。
 在发送MAX_DATA或MAX_STREAM_DATA之前，接收方不应该等待BLOCKED或STREAM_BLOCKED帧，因为这样做意味着整个往返时延内发送发无法发送任何数据。
 
 拥塞控制的最好方式，尽可能的避免发送发停止工作。为了避免阻塞发送方和统计存在的数据丢失的可能性，接收方必须在期望发送发阻塞之前发送MAX_DATA或者MAX_STREAM_DATA帧至少2个往返延迟。当发送方到达限制时，发送方只会发送BLOCKED或者STREAM_BLOCKED一次。发送发不能够对同一个限制发送多个BLOCKED或者STREAM_BLOCKED帧，除非原始帧对视。新的LOCKED or STREAM_BLOCKED只能在数据limit更新以后发送。
