@@ -147,6 +147,7 @@ The Timestamp Section contains between zero and 255 measurements of packet recei
 |[Delta LA N(8)]| [Time Since Previous N (16)]  |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 Figure 9: Timestamp Section
+
 ```
 The fields in the Timestamp Section are:
 Delta Largest Acknowledged (opt):
