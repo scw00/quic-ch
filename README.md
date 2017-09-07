@@ -130,7 +130,7 @@ ACK Block Length (opt, repeated):
 An unsigned packet number delta that indicates the number of contiguous packets being acknowledged starting after the end of the previous gap. Repeated “Num Blocks” times.
 8.13.2. Timestamp Section
 The Timestamp Section contains between zero and 255 measurements of packet receive times relative to the beginning of the connection.
-````
+```
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+
