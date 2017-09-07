@@ -47,6 +47,128 @@ stateless reset不适合作为错误的提示信号。一端（An endpoint）如
 --
 stateless reset token 必须很难被猜到。服务器可以为每一个已创建的链接生成一个随机数。但是，如果服务器丢失了链接，这会在同个集群的不同机器的协调和存储上存在难题。Stateless reset专门用来处理状态丢失的情况，所以这种处理是次优的。
 
+8.13. ACK Frame
+=====
+
+接收方发送ack帧来通知发送方这个包已经被接受和处理，或者表明哪些包丢失。ack帧包含1-256个blocks。ack blocks包含一组确认包。实现者不能够对只包含ack block的包发送ack包。虽然我们会再别的ack包中包含这个ack信息。
+
+为了限制哪些没有被接收端接收到的ack blocks。接收端必须必须追踪每一个背对端确认的ack帧。同一个包不能够确认两遍。
+
+如果接收方只发送ack帧，那么接收方永远也不会受到该ack帧相应的ack包。随机发送 MAX_DATA or MAX_STREAM_DATA 帧来标记数据已经被接受可以保证对端确认数据。否则一端可以每隔一个rtt发送一次 PING帧来获取确认帧。
+
+为了限制接收端状态和ack 帧大小，接收端可以限制发送ack blocks数量。即使没有收到ack确认帧，接收端也可以收集ack blocks直到到达limit。但是这能会导致不必要的重传。
+
+和tcp sacks不同的是，quic ack blocks是无法撤销的。一旦packet被确认，即使是在未来的某个ack中没有出现该packet的确认证，该确认依然有效。
+
+客户端不能够确认Version Negotiation or Server Stateless Retry packets。这些帧的packet number是有client选择的，不是客户端逊则的。
+
+QUIC ACK帧包含最多255个时间戳的时间戳部分。时间戳可以有利于更好的传输控制，但是不是现阶段loss recovery的必须品，并且求得时间戳价值有限，所以无法保证每一个时间戳都将被发送发收到。接收方应该为每个包和可重传帧的数据包发送一次时间戳。接收方可以为非重传包发送timestamps，但是不能为没有保护的包发送timestamps。
+
+发送者可以有意地跳过分组号码，以将熵引入到连接中（introduce entropy into the connection），来避免随机ack攻击。当接收到未被发送的的packet的确认帧时，发送方应当关闭连接。ack帧格式很容易辨认出哪些包丢失，1到255之间的数据包编号有效地提供高达8位的有效熵。这对确认攻击起到保护作用。
+
+
+The type byte for a ACK frame contains embedded flags, and is formatted as 101NLLMM. These bits are parsed as follows:
+The first three bits must be set to 101 indicating that this is an ACK frame.
+The N bit indicates whether the frame contains a Num Blocks field.
+The two LL bits encode the length of the Largest Acknowledged field. The values 00, 01, 02, and 03 indicate lengths of 8, 16, 32, and 64 bits respectively.
+The two MM bits encode the length of the ACK Block Length fields. The values 00, 01, 02, and 03 indicate lengths of 8, 16, 32, and 64 bits respectively.
+An ACK frame is shown below.
+
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|[Num Blocks(8)]|   NumTS (8)   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                Largest Acknowledged (8/16/32/64)            ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|        ACK Delay (16)         |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     ACK Block Section (*)                   ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     Timestamp Section (*)                   ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+Figure 7: ACK Frame Format
+```
+The fields in the ACK frame are as follows:
+Num Blocks (opt):
+An optional 8-bit unsigned value specifying the number of additional ACK blocks (besides the required First ACK Block) in this ACK frame. Only present if the ‘N’ flag bit is 1.
+Num Timestamps:
+An unsigned 8-bit number specifying the total number of <packet number, timestamp> pairs in the Timestamp Section.
+Largest Acknowledged:
+A variable-sized unsigned value representing the largest packet number the peer is acknowledging in this packet (typically the largest that the peer has seen thus far.)
+ACK Delay:
+The time from when the largest acknowledged packet, as indicated in the Largest Acknowledged field, was received by this peer to when this ACK was sent.
+ACK Block Section:
+Contains one or more blocks of packet numbers which have been successfully received, see Section 8.13.1.
+Timestamp Section:
+Contains zero or more timestamps reporting transit delay of received packets. See Section 8.13.2.
+8.13.1. ACK Block Section
+The ACK Block Section contains between one and 256 blocks of packet numbers which have been successfully received. If the Num Blocks field is absent, only the First ACK Block length is present in this section. Otherwise, the Num Blocks field indicates how many additional blocks follow the First ACK Block Length field.
+```
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|              First ACK Block Length (8/16/32/64)            ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  [Gap 1 (8)]  |       [ACK Block 1 Length (8/16/32/64)]     ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  [Gap 2 (8)]  |       [ACK Block 2 Length (8/16/32/64)]     ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+                             ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|  [Gap N (8)]  |       [ACK Block N Length (8/16/32/64)]     ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+Figure 8: ACK Block Section
+```
+The fields in the ACK Block Section are:
+First ACK Block Length:
+An unsigned packet number delta that indicates the number of contiguous additional packets being acknowledged starting at the Largest Acknowledged.
+Gap To Next Block (opt, repeated):
+An unsigned number specifying the number of contiguous missing packets from the end of the previous ACK block to the start of the next. Repeated “Num Blocks” times.
+ACK Block Length (opt, repeated):
+An unsigned packet number delta that indicates the number of contiguous packets being acknowledged starting after the end of the previous gap. Repeated “Num Blocks” times.
+8.13.2. Timestamp Section
+The Timestamp Section contains between zero and 255 measurements of packet receive times relative to the beginning of the connection.
+````
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+
+| [Delta LA (8)]|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                    [First Timestamp (32)]                     |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|[Delta LA 1(8)]| [Time Since Previous 1 (16)]  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|[Delta LA 2(8)]| [Time Since Previous 2 (16)]  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+                       ...
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|[Delta LA N(8)]| [Time Since Previous N (16)]  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+Figure 9: Timestamp Section
+```
+The fields in the Timestamp Section are:
+Delta Largest Acknowledged (opt):
+An optional 8-bit unsigned packet number delta specifying the delta between the largest acknowledged and the first packet whose timestamp is being reported. In other words, this first packet number may be computed as (Largest Acknowledged - Delta Largest Acknowledged.)
+First Timestamp (opt):
+An optional 32-bit unsigned value specifying the time delta in microseconds, from the beginning of the connection to the arrival of the packet indicated by Delta Largest Acknowledged.
+Delta Largest Acked 1..N (opt, repeated):
+This field has the same semantics and format as “Delta Largest Acknowledged”. Repeated “Num Timestamps - 1” times.
+Time Since Previous Timestamp 1..N(opt, repeated):
+An optional 16-bit unsigned value specifying time delta from the previous reported timestamp. It is encoded in the same format as the ACK Delay. Repeated “Num Timestamps - 1” times.
+The timestamp section lists packet receipt timestamps ordered by timestamp.
+8.13.2.1. Time Format
+DISCUSS_AND_REPLACE: Perhaps make this format simpler.
+The time format used in the ACK frame above is a 16-bit unsigned float with 11 explicit bits of mantissa and 5 bits of explicit exponent, specifying time in microseconds. The bit format is loosely modeled after IEEE 754. For example, 1 microsecond is represented as 0x1, which has an exponent of zero, presented in the 5 high order bits, and mantissa of 1, presented in the 11 low order bits. When the explicit exponent is greater than zero, an implicit high-order 12th bit of 1 is assumed in the mantissa. For example, a floating value of 0x800 has an explicit exponent of 1, as well as an explicit mantissa of 0, but then has an effective mantissa of 4096 (12th bit is assumed to be 1). Additionally, the actual exponent is one-less than the explicit exponent, and the value represents 4096 microseconds. Any values larger than the representable range are clamped to 0xFFFF.
+8.13.3. ACK Frames and Packet Protection
+ACK frames that acknowledge protected packets MUST be carried in a packet that has an equivalent or greater level of packet protection.
+Packets that are protected with 1-RTT keys MUST be acknowledged in packets that are also protected with 1-RTT keys.
+A packet that is not protected and claims to acknowledge a packet number that was sent with packet protection is not valid. An unprotected packet that carries acknowledgments for protected packets MUST be discarded in its entirety.
+Packets that a client sends with 0-RTT packet protection MUST be acknowledged by the server in packets protected by 1-RTT keys. This can mean that the client is unable to use these acknowledgments if the server cryptographic handshake messages are delayed or lost. Note that the same limitation applies to other data sent by the server protected by the 1-RTT keys.
+Unprotected packets, such as those that carry the initial cryptographic handshake messages, MAY be acknowledged in unprotected packets. Unprotected packets are vulnerable to falsification or modification. Unprotected packets can be acknowledged along with protected packets in a protected packet.
+An endpoint SHOULD acknowledge packets containing cryptographic handshake messages in the next unprotected packet that it sends, unless it is able to acknowledge those packets in later packets protected by 1-RTT keys. At the completion of the cryptographic handshake, both peers send unprotected packets containing cryptographic handshake messages followed by packets protected by 1-RTT keys. An endpoint SHOULD acknowledge the unprotected packets that complete the cryptographic handshake in a protected packet, because its peer is guaranteed to have access to 1-RTT packet protection keys.
+For instance, a server acknowledges a TLS ClientHello in the packet that carries the TLS ServerHello; similarly, a client can acknowledge a TLS HelloRetryRequest in the packet containing a second TLS ClientHello. The complete set of server handshake messages (TLS ServerHello through to Finished) might be acknowledged by a client in protected packets, because it is certain that the server is able to decipher the packet.
 
 11.1. Edge Cases and Other Considerations
 =========
