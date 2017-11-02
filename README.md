@@ -1,3 +1,32 @@
+
+7.7.1. Privacy Implications of Connection Migration
+---
+
+在多个网络路径上使用稳定的Connection ID 可以使被动的观察这些路径之间的相互联系。client在不同网络路径间的移动往往不希望只希望和server之间保持互动（抛弃过去的路径）。server可以发送NEW_CONNECTION_ID消息来提供一个无关联的connection id。
+这个id 可以被用作client希望显示的抛弃另一方的链接。
+
+
+client 可能需要再收到server response 之前，在不同网络路径上发送多个包。为了保证client 不再与对方相关联。我们需要一个新的Connection id和packet number gap 对应对应每一个网络路径。为了支持这些，
+server 发送多个NEW_CONNECTION_ID消息。每一个NEW_CONNECTION_ID消息用sequence 标记。 NEW_CONNECTION_ID中的connection id 必须按照顺序使用。
+
+
+希望通过改变网络打破链接的客户端必须使用必须使用server提供的connection id。 同时，通过一个外部无法预测的计算（见7.7.1.1），自增每一个packet sequence。客户可能跳过connection ID，但是必须保证提交对应Connection id相关联的packet number 范围， 用来跳过不是该Connection id 的链接请求。
+
+server 接收到被标记为新connection id 的packet可以通过增加累计的packet number gap来恢复预期的packet number。server必须抛弃包含比建议跟小的gao的packet。
+
+例如，server 在新的Connection id上提供7个packet number 间隙。如果在前一个链接id上受到packet 10， 下一个预期packet必须为新连接的packet 18。新连接上packet 17 必须被抛弃。
+
+7.7.1.1. Packet Number Gap
+----
+为了避免连锁，packet number 间隙必须是外部随机的外部无法确认的。一个connection id 的packe number 间隙的序号可以通过将sequence number编码成大段32位整型来计算：
+
+```
+Gap = HKDF-Expand-Label(packet_number_secret,
+                        "QUIC packet sequence gap", sequence, 4)
+```
+
+HKDF-Expand-Label的输出被解释为大端数字。“packet_number_secret”由tls的key交换提供。如[QUIC-TLS] 5.6章的描述。
+
 7.8. Stateless Reset
 ===========
 服务器可以选择发送stateless reset来解决链接的异常状态。客户端持续发送给服务器非法数据（unable to properly continue the connection）可能会导致服务器宕机。如果客户端能够处理，服务器希望用CONNECTION_CLOSE 帧来发送一个致命错误。
