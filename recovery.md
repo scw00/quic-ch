@@ -193,7 +193,34 @@ QUIC 应该延迟回应包中的确认消息，但是不能够过分的延迟不
 
 An acknowledgement MAY be sent for every second full-sized packet, as TCP does [RFC5681], or may be sent less frequently, as long as the delay does not exceed the maximum ack delay. QUIC recovery algorithms do not assume the peer generates an acknowledgement immediately when receiving a second full-sized packet.
 
+可以每次确认第二个满字节的包，和TCP[RFC5681],或者只要没有超过最大延迟是时间，可以少量的发送确认帧。QUIC并不希望对端收到第二个满字节包时立即生成一个确认。
 
 Out-of-order packets SHOULD be acknowledged more quickly, in order to accelerate loss recovery. The receiver SHOULD send an immediate ACK when it receives a new packet which is not one greater than the largest received packet number.
 
+为了加速丢失恢复，乱序包应该被立即确认。当收到一个包，他的packet number 比已经接受到的最大packetnumber 小时，接收者必须立即发送一个ACK。
+
 As an optimization, a receiver MAY process multiple packets before sending any ACK frames in response. In this case they can determine whether an immediate or delayed acknowledgement should be generated after processing incoming packets.
+
+接收者在发送一个ack帧之前处理多个包作为优化。这种情况下接收者可以决定在处理完接收到包之后是立即确认还是延迟确认。
+
+3.4.1. ACK Ranges
+When an ACK frame is sent, one or more ranges of acknowledged packets are included. Including older packets reduces the chance of spurious retransmits caused by losing previously sent ACK frames, at the cost of larger ACK frames.
+
+当发送ack帧时，ack packet 可以包含一个或者多个区间。包含旧的包可以减少由于丢失ack帧而导致的伪重传，但是会增到ack帧。
+
+ACK frames SHOULD always acknowledge the most recently received packets, and the more out-of-order the packets are, the more important it is to send an updated ACK frame quickly, to prevent the peer from declaring a packet as lost and spuriusly retransmitting the frames it contains.
+
+ACK 帧需需要确认最近收到的包和乱序包，最重要的是快速发送更新后的ack来避免认为包丢失而触发伪重传。
+
+Below is one recommended approach for determining what packets to include in an ACK frame.
+
+
+3.4.2. Receiver Tracking of ACK Frames
+When a packet containing an ACK frame is sent, the largest acknowledged in that frame may be saved. When a packet containing an ACK frame is acknowledged, the receiver can stop acknowledging packets less than or equal to the largest acknowledged in the sent ACK frame.
+
+当发送一个包含ack 帧的包时，可以保存这个包中最大确认的pn，当这个包被确认时，接收者可以停止确认<= 这个最大pn的确认。
+
+In cases without ACK frame loss, this algorithm allows for a minimum of 1 RTT of reordering. In cases with ACK frame loss, this approach does not guarantee that every acknowledgement is seen by the sender before it is no longer included in the ACK frame. Packets could be received out of order and all subsequent ACK frames containing them could be lost. In this case, the loss recovery algorithm may cause spurious retransmits, but the sender will continue making forward progress.
+
+如果ack帧没有丢失，算法允许1rtt的冲重排。如果ack帧丢失，这个方法无法保证每一个确认都能被发送者收到，从而不再包含过去的过去的确认。包可能被重排，之后的所有ack都可能丢失。这种情况下，loss recovery将处罚伪重传，但是发送者可能正常前进。
+
